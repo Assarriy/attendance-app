@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "250763014363",
+    "project_id": "attattendance-app",
+    "storage_bucket": "attattendance-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:250763014363:android:e7be43be0534f3a1409cfe",
+        "android_client_info": {
+          "package_name": "com.assarriy.attendance"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCX19pCW6mzmm2eVIH-I11CjlryCdBZZiA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
