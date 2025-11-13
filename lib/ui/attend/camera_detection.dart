@@ -1,28 +1,27 @@
 import 'dart:io';
-
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
-import 'package:lottie/lottie.dart'; // Function to display animation
+import 'package:lottie/lottie.dart';
 import 'package:attendance_app/ui/attend/attend_screen.dart';
-import 'package:attendance_app/utils/face_detection/google_ml_kit.dart'; // Function to detect face using Google ML Kit
+import 'package:attendance_app/utils/face_detection/google_ml_kit.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
 
   @override
-  State<CameraScreen> createState() => _State();
+  State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _State extends State<CameraScreen> with TickerProviderStateMixin {
-  //set face detection
+class _CameraScreenState extends State<CameraScreen> with TickerProviderStateMixin {
   FaceDetector faceDetector = GoogleMlKit.vision.faceDetector(
     FaceDetectorOptions(
       enableContours: true,
       enableClassification: true,
       enableTracking: true,
       enableLandmarks: true,
+      performanceMode: FaceDetectorMode.accurate,
     ),
   );
 
@@ -30,372 +29,541 @@ class _State extends State<CameraScreen> with TickerProviderStateMixin {
   CameraController? controller;
   XFile? image;
   bool isBusy = false;
+  bool _isCameraInitialized = false;
+  bool _isCapturing = false;
 
   @override
   void initState() {
-    loadCamera();
     super.initState();
+    _initializeCamera();
   }
 
-  //set open front camera device
-  //if 1 front, if 0 rear
-  Future<void> loadCamera() async {
-    cameras = await availableCameras();
+  @override
+  void dispose() {
+    controller?.dispose();
+    faceDetector.close();
+    super.dispose();
+  }
 
-    if (cameras != null) {
-      // Pilih kamera depan (front)
+  Future<void> _initializeCamera() async {
+    try {
+      cameras = await availableCameras();
+      
+      if (cameras == null || cameras!.isEmpty) {
+        _showErrorSnackbar("No camera available on this device");
+        return;
+      }
+
+      // Pilih kamera depan
       final frontCamera = cameras!.firstWhere(
         (camera) => camera.lensDirection == CameraLensDirection.front,
         orElse: () => cameras!.first,
       );
 
-      controller = CameraController(frontCamera, ResolutionPreset.veryHigh);
-
-      try {
-        await controller!.initialize();
-        if (mounted) {
-          setState(() {});
-        }
-      } catch (e) {
-        debugPrint('Error initializing camera: $e');
-      }
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.camera_enhance_outlined, color: Colors.white),
-              SizedBox(width: 10),
-              Text(
-                "Ups, camera not found!",
-                style: TextStyle(color: Colors.white),
-              ),
-            ],
-          ),
-          backgroundColor: Colors.blueGrey,
-          shape: StadiumBorder(),
-          behavior: SnackBarBehavior.floating,
-        ),
+      controller = CameraController(
+        frontCamera,
+        ResolutionPreset.high,
+        enableAudio: false,
       );
+
+      await controller!.initialize();
+      
+      if (mounted) {
+        setState(() {
+          _isCameraInitialized = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error initializing camera: $e');
+      _showErrorSnackbar("Failed to initialize camera: $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    Size size = MediaQuery.of(context).size;
-
-    //set loading
-    showLoaderDialog(BuildContext context) {
-      AlertDialog alert = AlertDialog(
-        content: Row(
-          children: [
-            const CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.blueAccent),
-            ),
-            Container(
-              margin: const EdgeInsets.only(left: 20),
-              child: const Text("Checking the data..."),
-            ),
-          ],
-        ),
-      );
-      showDialog(
-        barrierDismissible: false,
-        context: context,
-        builder: (BuildContext context) {
-          return alert;
-        },
-      );
-    }
+    final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: const Color.fromARGB(255, 26, 0, 143),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.white),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        centerTitle: true,
-        title: const Text(
-          "Capture a selfie image",
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Colors.white,
-          ),
-        ),
-      ),
+      backgroundColor: Colors.black,
       body: Stack(
         children: [
-          SizedBox(
-            height: size.height,
-            width: size.width,
-            child:
-                controller == null
-                    ? const Center(
-                      child: Text(
-                        "Ups, camera error!",
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    )
-                    : !controller!.value.isInitialized
-                    ? const Center(child: CircularProgressIndicator())
-                    : CameraPreview(controller!),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(top: 40),
-            child: Lottie.asset(
-              "assets/raw/face_id_ring.json",
-              fit: BoxFit.cover,
-            ),
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Container(
-              width: size.width,
-              height: 200,
-              padding: const EdgeInsets.symmetric(horizontal: 30),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(28),
-                  topRight: Radius.circular(28),
-                ),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 20),
-                  const Text(
-                    "Make sure you're in a well-lit area so your face is clearly visible.",
-                    style: TextStyle(fontSize: 16, color: Colors.black),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 40),
-                    child: ClipOval(
-                      child: Material(
-                        color: Colors.blueAccent, // Button color
-                        child: InkWell(
-                          splashColor: Colors.blue, // Splash color
-                          onTap: () async {
-                            final hasPermission =
-                                await handleLocationPermission();
-                            try {
-                              if (controller != null) {
-                                if (controller!.value.isInitialized) {
-                                  controller!.setFlashMode(FlashMode.off);
-                                  image = await controller!.takePicture();
-                                  setState(() {
-                                    if (hasPermission) {
-                                      showLoaderDialog(context);
-                                      final inputImage =
-                                          InputImage.fromFilePath(image!.path);
-                                      Platform.isAndroid
-                                          ? processImage(inputImage)
-                                          : Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder:
-                                                  (context) => AttendScreen(
-                                                    image: image,
-                                                  ),
-                                            ),
-                                          );
-                                    } else {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        const SnackBar(
-                                          content: Row(
-                                            children: [
-                                              Icon(
-                                                Icons.location_on_outlined,
-                                                color: Colors.white,
-                                              ),
-                                              SizedBox(width: 10),
-                                              Text(
-                                                "Please allow the permission first!",
-                                                style: TextStyle(
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                          backgroundColor: Colors.blueGrey,
-                                          shape: StadiumBorder(),
-                                          behavior: SnackBarBehavior.floating,
-                                        ),
-                                      );
-                                    }
-                                  });
-                                }
-                              }
-                            } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.error_outline,
-                                        color: Colors.white,
-                                      ),
-                                      const SizedBox(width: 10),
-                                      Text(
-                                        "Ups, $e",
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  backgroundColor: Colors.blueGrey,
-                                  shape: const StadiumBorder(),
-                                  behavior: SnackBarBehavior.floating,
-                                ),
-                              );
-                            }
-                          },
-                          child: const SizedBox(
-                            width: 56,
-                            height: 56,
-                            child: Icon(
-                              Icons.camera_enhance_outlined,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          // Camera Preview
+          _buildCameraPreview(size),
+          
+          // Overlay Elements
+          _buildOverlayElements(size),
+          
+          // Bottom Control Panel
+          _buildBottomControlPanel(size),
         ],
       ),
     );
   }
 
-  //permission location
-  Future<bool> handleLocationPermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
+  Widget _buildCameraPreview(Size size) {
+    if (!_isCameraInitialized || controller == null) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.location_off, color: Colors.white),
-              SizedBox(width: 10),
-              Text(
-                "Location services are disabled. Please enable the services.",
-                style: TextStyle(color: Colors.white),
-              ),
-            ],
-          ),
-          backgroundColor: Colors.blueGrey,
-          shape: StadiumBorder(),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-      return false;
-    }
-
-    bool isLocationEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!isLocationEnabled) {
-      print("Layanan lokasi tidak aktif, silakan aktifkan GPS.");
-    }
-
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Row(
-              children: [
-                Icon(Icons.location_off, color: Colors.white),
-                SizedBox(width: 10),
-                Text(
-                  "Location permission denied.",
-                  style: TextStyle(color: Colors.white),
+              SizedBox(
+                width: 60,
+                height: 60,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade700),
                 ),
-              ],
-            ),
-            backgroundColor: Colors.blueGrey,
-            shape: StadiumBorder(),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-        return false;
-      }
-    }
-
-    if (permission == LocationPermission.deniedForever) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Row(
-            children: [
-              Icon(Icons.location_off, color: Colors.white),
-              SizedBox(width: 10),
+              ),
+              const SizedBox(height: 20),
               Text(
-                "Location permission denied forever, we cannot access.",
-                style: TextStyle(color: Colors.white),
+                "Initializing Camera...",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ],
           ),
-          backgroundColor: Colors.blueGrey,
-          shape: StadiumBorder(),
-          behavior: SnackBarBehavior.floating,
         ),
       );
-      return false;
     }
-    return true;
+
+    return SizedBox(
+      height: size.height,
+      width: size.width,
+      child: CameraPreview(controller!),
+    );
   }
 
-  //face detection
-  Future<void> processImage(InputImage inputImage) async {
-    if (isBusy) return;
-    isBusy = true;
-    final faces = await faceDetector.processImage(inputImage);
-    isBusy = false;
-
-    if (mounted) {
-      setState(() {
-        Navigator.of(context).pop(true);
-        if (faces.isNotEmpty) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (context) => AttendScreen(image: image)),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Row(
+  Widget _buildOverlayElements(Size size) {
+    return Column(
+      children: [
+        // Custom App Bar
+        Container(
+          height: 120,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withOpacity(0.7),
+                Colors.transparent,
+              ],
+            ),
+          ),
+          child: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: Row(
                 children: [
-                  Icon(
-                    Icons.face_retouching_natural_outlined,
-                    color: Colors.white,
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.arrow_back_ios_rounded, color: Colors.white),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
                   ),
-                  SizedBox(width: 10),
+                  const SizedBox(width: 16),
                   Expanded(
-                    child: Text(
-                      "Ups, make sure that you're face is clearly visible!",
-                      style: TextStyle(color: Colors.white),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          "Face Verification",
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          "Take a clear selfie for attendance",
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white.withOpacity(0.8),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              backgroundColor: Colors.blueGrey,
-              shape: StadiumBorder(),
-              behavior: SnackBarBehavior.floating,
+            ),
+          ),
+        ),
+
+        // Face Detection Guide
+        Expanded(
+          child: Center(
+            child: Container(
+              width: size.width * 0.7,
+              height: size.width * 0.7,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withOpacity(0.3),
+                  width: 2,
+                ),
+              ),
+              child: Lottie.asset(
+                "assets/raw/face_id_ring.json",
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+        ),
+
+        // Spacer for bottom panel
+        SizedBox(height: size.height * 0.25),
+      ],
+    );
+  }
+
+  Widget _buildBottomControlPanel(Size size) {
+    return Align(
+      alignment: Alignment.bottomCenter,
+      child: Container(
+        width: size.width,
+        height: size.height * 0.3,
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.bottomCenter,
+            end: Alignment.topCenter,
+            colors: [
+              Colors.black.withOpacity(0.9),
+              Colors.black.withOpacity(0.5),
+              Colors.transparent,
+            ],
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            // Instructions
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.lightbulb_outline_rounded,
+                    color: Colors.amber.shade400,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      "Ensure good lighting and face the camera directly",
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 14,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            const SizedBox(height: 20),
+            
+            // Capture Button
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                // Outer Ring
+                Container(
+                  width: 80,
+                  height: 80,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withOpacity(0.3),
+                      width: 2,
+                    ),
+                  ),
+                ),
+                
+                // Capture Button
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.white.withOpacity(0.3),
+                        blurRadius: 10,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _isCapturing ? null : _captureImage,
+                      borderRadius: BorderRadius.circular(34),
+                      child: Center(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: _isCapturing ? 30 : 60,
+                          height: _isCapturing ? 30 : 60,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _isCapturing ? Colors.grey : Colors.white,
+                            border: Border.all(
+                              color: _isCapturing ? Colors.grey.shade400 : Colors.white,
+                              width: 2,
+                            ),
+                          ),
+                          child: _isCapturing
+                              ? SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue.shade700),
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.camera_alt_rounded,
+                                  color: Colors.black,
+                                  size: 30,
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _captureImage() async {
+    if (!_isCameraInitialized || controller == null || isBusy || _isCapturing) {
+      return;
+    }
+
+    setState(() {
+      _isCapturing = true;
+    });
+
+    try {
+      // Check location permission first
+      final hasLocationPermission = await _handleLocationPermission();
+      if (!hasLocationPermission) {
+        setState(() {
+          _isCapturing = false;
+        });
+        return;
+      }
+
+      // Take picture
+      final XFile capturedImage = await controller!.takePicture();
+      
+      // Process image for face detection
+      await _processImageForFaceDetection(capturedImage);
+      
+    } catch (e) {
+      debugPrint('Error capturing image: $e');
+      setState(() {
+        _isCapturing = false;
+      });
+      _showErrorSnackbar("Failed to capture image: $e");
+    }
+  }
+
+  Future<void> _processImageForFaceDetection(XFile capturedImage) async {
+    if (isBusy) return;
+    
+    isBusy = true;
+    
+    try {
+      final inputImage = InputImage.fromFilePath(capturedImage.path);
+      final List<Face> faces = await faceDetector.processImage(inputImage);
+      
+      if (mounted) {
+        if (faces.isNotEmpty) {
+          // Face detected successfully
+          _showSuccessFeedback();
+          
+          // Navigate to attend screen after short delay
+          await Future.delayed(const Duration(milliseconds: 500));
+          
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => AttendScreen(image: capturedImage),
             ),
           );
+        } else {
+          // No face detected
+          setState(() {
+            _isCapturing = false;
+          });
+          _showFaceDetectionError();
         }
-      });
+      }
+    } catch (e) {
+      debugPrint('Error processing image: $e');
+      if (mounted) {
+        setState(() {
+          _isCapturing = false;
+        });
+        _showErrorSnackbar("Error processing image: $e");
+      }
+    } finally {
+      isBusy = false;
+    }
+  }
+
+  void _showSuccessFeedback() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.check_circle_rounded,
+                color: Colors.green.shade600,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              "Face verified successfully!",
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.green.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showFaceDetectionError() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.face_retouching_natural_outlined,
+                color: Colors.orange.shade600,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                "No face detected. Please ensure your face is clearly visible and well-lit.",
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.orange.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showErrorSnackbar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.error_outline_rounded,
+                color: Colors.red.shade600,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: Colors.red.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+      ),
+    );
+  }
+
+  Future<bool> _handleLocationPermission() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _showErrorSnackbar("Location services are disabled. Please enable GPS.");
+        return false;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _showErrorSnackbar("Location permission is required for attendance.");
+          return false;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        _showErrorSnackbar("Location permission permanently denied. Please enable it in settings.");
+        return false;
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error checking location permission: $e');
+      _showErrorSnackbar("Error checking location permission: $e");
+      return false;
     }
   }
 }
